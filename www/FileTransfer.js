@@ -98,11 +98,10 @@ var FileTransfer = function() {
 * @param options {FileUploadOptions} Optional parameters such as file name and mimetype
 * @param trustAllHosts {Boolean} Optional trust all hosts (e.g. for self-signed certs), defaults to false
 */
-FileTransfer.prototype.upload = function(filePath, server, successCallback, errorCallback, options, trustAllHosts) {
-    argscheck.checkArgs('ssFFO*', 'FileTransfer.upload', arguments);
+FileTransfer.prototype.upload = function(server, successCallback, errorCallback, options, trustAllHosts) {
+    //argscheck.checkArgs('ssFFO*', 'FileTransfer.upload', arguments);
     // check for options
-    var fileKey = null;
-    var fileName = null;
+    var files = null;
     var mimeType = null;
     var params = null;
     var chunkedMode = true;
@@ -118,8 +117,7 @@ FileTransfer.prototype.upload = function(filePath, server, successCallback, erro
     }
 
     if (options) {
-        fileKey = options.fileKey;
-        fileName = options.fileName;
+        files = options.files;
         mimeType = options.mimeType;
         headers = options.headers;
         httpMethod = options.httpMethod || "POST";
@@ -159,7 +157,7 @@ FileTransfer.prototype.upload = function(filePath, server, successCallback, erro
             successCallback && successCallback(result);
         }
     };
-    exec(win, fail, 'FileTransfer', 'upload', [filePath, server, fileKey, fileName, mimeType, params, trustAllHosts, chunkedMode, headers, this._id, httpMethod]);
+    exec(win, fail, 'FileTransfer', 'upload', [server, files, mimeType, params, trustAllHosts, chunkedMode, headers, this._id, httpMethod]);
 };
 
 /**
