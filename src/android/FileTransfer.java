@@ -397,6 +397,10 @@ public class FileTransfer extends CordovaPlugin {
 
                         Log.d(LOG_TAG, beforeDataHeaders.toString());
 
+                        if (files.length() == 0) {
+                            sendStream.write((LINE_END + LINE_START + BOUNDARY + LINE_START + LINE_END).getBytes("UTF-8"));
+                        }
+
                         for (int i = 0; i < files.length(); i++) {
                             JSONObject file = files.getJSONObject(i);
 
@@ -439,7 +443,6 @@ public class FileTransfer extends CordovaPlugin {
                             // setFixedLengthStreamingMode causes and OutOfMemoryException on pre-Froyo devices.
                             // http://code.google.com/p/android/issues/detail?id=3164
                             // It also causes OOM if HTTPS is used, even on newer devices.
-
 
                             synchronized (context) {
                                 if (context.aborted) {
