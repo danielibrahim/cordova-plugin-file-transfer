@@ -274,8 +274,6 @@ public class FileTransfer extends CordovaPlugin {
         
         final CordovaResourceApi resourceApi = webView.getResourceApi();
 
-        /*Log.d(LOG_TAG, "fileKey: " + fileKey);
-        Log.d(LOG_TAG, "fileName: " + fileName);*/
         Log.d(LOG_TAG, "mimeType: " + mimeType);
         Log.d(LOG_TAG, "params: " + params);
         Log.d(LOG_TAG, "trustEveryone: " + trustEveryone);
@@ -372,74 +370,23 @@ public class FileTransfer extends CordovaPlugin {
                     try {
                         sendStream = conn.getOutputStream();
 
-                                            /*
-                        * Store the non-file portions of the multipart data as a string, so that we can add it
-                        * to the contentSize, since it is part of the body of the HTTP request.
-                        */
-                        StringBuilder beforeDataHeaders = new StringBuilder();
-                        try {
-                            for (Iterator<?> iter = params.keys(); iter.hasNext();) {
-                                Object key = iter.next();
-                                if(!String.valueOf(key).equals("headers"))
-                                {
-                                    beforeDataHeaders.append(LINE_START).append(BOUNDARY).append(LINE_END);
-                                    beforeDataHeaders.append("Content-Disposition: form-data; name=\"").append(key.toString()).append('"');
-                                    beforeDataHeaders.append(LINE_END).append(LINE_END);
-                                    beforeDataHeaders.append(params.getString(key.toString()));
-                                    beforeDataHeaders.append(LINE_END);
-                                }
-                            }
-                        } catch (JSONException e) {
-                            Log.e(LOG_TAG, e.getMessage(), e);
-                        }
+                        FileUploadRequest fileUploadRequest = new FileUploadRequest(params, files, resourceApi);
 
-                        sendStream.write(beforeDataHeaders.toString().getBytes("UTF-8"));
+                        fixedLength = (int)fileUploadRequest.getContentLength();
+                        progress.setLengthComputable(true);
+                        progress.setTotal(fixedLength);
 
-                        Log.d(LOG_TAG, beforeDataHeaders.toString());
+                        Log.d(LOG_TAG, "Content Length: " + fixedLength);
 
-                        if (files.length() == 0) {
-                            sendStream.write((LINE_END + LINE_START + BOUNDARY + LINE_START + LINE_END).getBytes("UTF-8"));
-                        }
+                        byte[] paramsDataStringBytes = fileUploadRequest.getParamsDataString().getBytes("UTF-8");
 
-                        for (int i = 0; i < files.length(); i++) {
-                            JSONObject file = files.getJSONObject(i);
+                        sendStream.write(paramsDataStringBytes);
+                        totalBytes += paramsDataStringBytes.length;
 
-                            String fileKey = file.getString("key");
-                            String fileName = file.getString("name");
+                        Log.d(LOG_TAG, fileUploadRequest.getParamsDataString().toString());
 
-                            // Accept a path or a URI for the source.
-                            Uri tmpSrc = Uri.parse(fileName);
-                            final Uri sourceUri = resourceApi.remapUri(
-                                    tmpSrc.getScheme() != null ? tmpSrc : Uri.fromFile(new File(fileName)));
+                        for (FileUploadRequest.FileTransferring fileTransferring : fileUploadRequest.getFiles()) {
 
-                            StringBuilder beforeData = new StringBuilder();
-
-                            beforeData.append(LINE_START).append(BOUNDARY).append(LINE_END);
-                            beforeData.append("Content-Disposition: form-data; name=\"").append(fileKey).append("\";");
-                            beforeData.append(" filename=\"").append(fileName).append('"').append(LINE_END);
-                            beforeData.append("Content-Type: ").append(mimeType).append(LINE_END).append(LINE_END);
-                            byte[] beforeDataBytes = beforeData.toString().getBytes("UTF-8");
-                            byte[] tailParamsBytes;
-
-                            if (i == files.length() - 1) {
-                                tailParamsBytes = (LINE_END + LINE_START + BOUNDARY + LINE_START + LINE_END).getBytes("UTF-8");
-                            } else {
-                                tailParamsBytes = (LINE_END + LINE_START + BOUNDARY + LINE_END).getBytes("UTF-8");
-                            }
-
-                            Log.d(LOG_TAG, beforeData.toString());
-                            Log.d(LOG_TAG, new String(tailParamsBytes));
-
-                            // Get a input stream of the file on the phone
-                            OpenForReadResult readResult = resourceApi.openForRead(sourceUri);
-
-                            int stringLength = beforeDataBytes.length + tailParamsBytes.length;
-                            if (readResult.length >= 0) {
-                                fixedLength = (int)readResult.length + stringLength;
-                                progress.setLengthComputable(true);
-                                progress.setTotal(fixedLength);
-                            }
-                            Log.d(LOG_TAG, "Content Length: " + fixedLength);
                             // setFixedLengthStreamingMode causes and OutOfMemoryException on pre-Froyo devices.
                             // http://code.google.com/p/android/issues/detail?id=3164
                             // It also causes OOM if HTTPS is used, even on newer devices.
@@ -452,16 +399,17 @@ public class FileTransfer extends CordovaPlugin {
                             }
                             //We don't want to change encoding, we just want this to write for all Unicode.
 
-                            sendStream.write(beforeDataBytes);
-                            totalBytes += beforeDataBytes.length;
+                            byte[] beforeDataHeaderBytes = fileTransferring.getBeforeDataHeader().getBytes("UTF-8");
+                            sendStream.write(beforeDataHeaderBytes);
+                            totalBytes += beforeDataHeaderBytes.length;
 
                             // create a buffer of maximum size
-                            int bytesAvailable = readResult.inputStream.available();
+                            int bytesAvailable = fileTransferring.getDataInputStream().available();
                             int bufferSize = Math.min(bytesAvailable, MAX_BUFFER_SIZE);
                             byte[] buffer = new byte[bufferSize];
 
                             // read file and write it into form...
-                            int bytesRead = readResult.inputStream.read(buffer, 0, bufferSize);
+                            int bytesRead = fileTransferring.getDataInputStream().read(buffer, 0, bufferSize);
 
                             long prevBytesRead = 0;
                             while (bytesRead > 0) {
@@ -472,9 +420,9 @@ public class FileTransfer extends CordovaPlugin {
                                     prevBytesRead = totalBytes;
                                     Log.d(LOG_TAG, "Uploaded " + totalBytes + " of " + fixedLength + " bytes");
                                 }
-                                bytesAvailable = readResult.inputStream.available();
+                                bytesAvailable = fileTransferring.getDataInputStream().available();
                                 bufferSize = Math.min(bytesAvailable, MAX_BUFFER_SIZE);
-                                bytesRead = readResult.inputStream.read(buffer, 0, bufferSize);
+                                bytesRead = fileTransferring.getDataInputStream().read(buffer, 0, bufferSize);
 
                                 // Send a progress event.
                                 progress.setLoaded(totalBytes);
@@ -483,12 +431,13 @@ public class FileTransfer extends CordovaPlugin {
                                 context.sendPluginResult(progressResult);
                             }
 
+                            byte[] afterDataHeaderBytes = fileTransferring.getAfterDataHeader().getBytes("UTF-8");
                             // send multipart form data necessary after file data...
-                            sendStream.write(tailParamsBytes);
-                            totalBytes += tailParamsBytes.length;
+                            sendStream.write(afterDataHeaderBytes);
+                            totalBytes += afterDataHeaderBytes.length;
                             sendStream.flush();
 
-                            safeClose(readResult.inputStream);
+                            safeClose(fileTransferring.getDataInputStream());
 
                             synchronized (context) {
                                 context.connection = null;
